@@ -3,9 +3,10 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+import base64
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 class GmailMessagesRetriever:
     @staticmethod
@@ -36,13 +37,37 @@ class GmailMessagesRetriever:
          # Call the Gmail API
         creds = self.getCreds()
         service = build("gmail", "v1", credentials=creds)
-        results = service.users().labels().list(userId="me").execute()
-        labels = results.get("labels", [])
 
-        print("Labels:")
-        for label in labels:
-            print(label["name"])
+        results = service.users().messages().list(
+            userId="me",
+            q="is:unread",
+            maxResults=5
+            ).execute()
+        messages = results.get("messages", [])
 
+        if not messages:
+            print("Нет писем")
+        else:
+            print(f"Найдено {len(messages)} непрочитанных писем:")
+            
+            for msg in messages:
+                message = service.users().messages().get(
+                    userId="me",
+                    id=msg["id"],
+                    format="full",
+                    metadataHeaders=["Subject", "From"]
+                ).execute()
 
-    
+                headers = message["payload"]["headers"]
+                subject = next(h["value"] for h in headers if h["name"] == "Subject")
+                sender = next(h["value"] for h in headers if h["name"] == "From")
+                print(f"Тема: {subject}\nОт: {sender}")
+
+                parts = message["payload"]["parts"]
+                for part in parts:
+                    if part["mimeType"] == "text/plain":
+                        text_data = part["body"]["data"]  # Данные в base64
+                        text = base64.urlsafe_b64decode(text_data).decode("utf-8")
+                        print("Текст письма:", text)
+
 GmailMessagesRetriever()
